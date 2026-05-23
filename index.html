@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pro Drum Tuner (Time-Domain)</title>
+    <link rel="manifest" href="./manifest.json">
     <style>
         :root {
             --bg-color: #121214;
@@ -217,5 +218,18 @@
         }
     }
 </script>
+   <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(registration => {
+                    console.log('Offline Engine Active:', registration.scope);
+                })
+                .catch(error => {
+                    console.log('Offline Engine Failed:', error);
+                });
+        });
+    }
+</script> 
 </body>
 </html>
