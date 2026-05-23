@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Drum Tuner (Time-Domain)</title>
+    <style>
+        :root {
+            --bg-color: #121214;
+            --card-color: #1e1e24;
+            --accent-color: #00adb5;
+            --success-color: #2e7d32;
+            --danger-color: #d32f2f;
+            --text-color: #ffffff;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 450px; background: var(--card-color); border-radius: 16px; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); box-sizing: border-box; }
+        h1 { text-align: center; margin-top: 0; color: var(--accent-color); font-size: 24px; }
+        
+        button.main-btn { width: 100%; padding: 16px; font-size: 18px; font-weight: bold; border-radius: 12px; border: none; background: var(--accent-color); color: white; cursor: pointer; margin-bottom: 20px; transition: all 0.2s; }
+        select { width: 100%; padding: 12px; background: #2a2a35; color: white; border: 1px solid #444; border-radius: 8px; font-size: 16px; margin-bottom: 20px; }
+        
+        .display-panel { text-align: center; background: #151518; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        #hz-display { font-size: 54px; font-weight: bold; color: var(--accent-color); margin: 10px 0; }
+        .target-text { font-size: 14px; color: #aaa; }
+
+        .meter-container { position: relative; width: 100%; height: 20px; background: #333; border-radius: 10px; margin: 25px 0; overflow: hidden; }
+        .center-line { position: absolute; left: 50%; top: 0; width: 4px; height: 100%; background: #fff; transform: translateX(-50%); z-index: 2; }
+        #needle { position: absolute; left: 50%; top: 0; width: 8px; height: 100%; background: var(--accent-color); transform: translateX(-50%); transition: left 0.2s ease-out; border-radius: 4px; }
+
+        .lug-section-title { font-size: 14px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;}
+        .lug-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px; }
+        .lug-btn { background: #2a2a35; border: 1px solid #444; color: white; padding: 12px; border-radius: 8px; font-size: 13px; cursor: pointer; text-align: center; }
+        .lug-btn:active { background: #3a3a45; }
+        .lug-btn span { display: block; font-size: 16px; font-weight: bold; margin-top: 4px; color: var(--accent-color); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Pro Drum Tuner</h1>
+    
+    <button id="start-btn" class="main-btn">Start Audio Stream</button>
+
+    <label for="drum-select" style="font-size: 14px; color: #aaa; display:block; margin-bottom: 5px;">Select Drum Profile:</label>
+    <select id="drum-select">
+        <option value="180,140,240">10" Rack Tom (Target: 180 Hz)</option>
+        <option value="140,110,200" selected>12" Rack Tom (Target: 140 Hz)</option>
+        <option value="110,85,160">14" Floor Tom (Target: 110 Hz)</option>
+        <option value="90,70,130">16" Floor Tom (Target: 90 Hz)</option>
+        <option value="200,150,300">14" Snare Drum (Target: 200 Hz)</option>
+        <option value="60,40,90">22" Bass Drum (Target: 60 Hz)</option>
+    </select>
+
+    <div class="display-panel">
+        <div class="target-text">Detected Pitch</div>
+        <div id="hz-display">-- Hz</div>
+        <div class="target-text" id="target-display">Target: 140.0 Hz</div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #aaa;">
+        <span>FLAT (-20Hz)</span>
+        <span>IN TUNE</span>
+        <span>SHARP (+20Hz)</span>
+    </div>
+    <div class="meter-container">
+        <div class="center-line"></div>
+        <div id="needle"></div>
+    </div>
+
+    <div class="lug-section-title">Lug Matcher (Tap to save)</div>
+    <div class="lug-grid">
+        <button class="lug-btn" onclick="saveToLug(1)">Lug 1<span id="lug1">--</span></button>
+        <button class="lug-btn" onclick="saveToLug(2)">Lug 2<span id="lug2">--</span></button>
+        <button class="lug-btn" onclick="saveToLug(3)">Lug 3<span id="lug3">--</span></button>
+        <button class="lug-btn" onclick="saveToLug(4)">Lug 4<span id="lug4">--</span></button>
+        <button class="lug-btn" onclick="saveToLug(5)">Lug 5<span id="lug5">--</span></button>
+        <button class="lug-btn" onclick="saveToLug(6)">Lug 6<span id="lug6">--</span></button>
+    </div>
+</div>
+
+<script>
+    const startBtn = document.getElementById('start-btn');
+    const hzDisplay = document.getElementById('hz-display');
+    const targetDisplay = document.getElementById('target-display');
+    const drumSelect = document.getElementById('drum-select');
+    const needle = document.getElementById('needle');
+
+    let currentReading = 0; 
+    let lockUntil = 0; 
+
+    // Profile parameters
+    let targetHz = 140;
+    let minHz = 110;
+    let maxHz = 200;
+
+    // Update targets when user changes the dropdown
+    drumSelect.addEventListener('change', (e) => {
+        const parts = e.target.value.split(',').map(Number);
+        targetHz = parts[0];
+        minHz = parts[1];
+        maxHz = parts[2];
+        targetDisplay.innerText = `Target: ${targetHz.toFixed(1)} Hz`;
+        updateMeter(targetHz);
+    });
+
+    // The Math Engine: Autocorrelation
+    function findDrumPitch(timeDomainBuffer, sampleRate) {
+        const bufferSize = timeDomainBuffer.length;
+
+        // 1. Check Root Mean Square (RMS) volume to filter out background room hiss
+        let totalSquares = 0;
+        for (let i = 0; i < bufferSize; i++) {
+            totalSquares += timeDomainBuffer[i] * timeDomainBuffer[i];
+        }
+        const rms = Math.sqrt(totalSquares / bufferSize);
+        if (rms < 0.02) return -1; // Signal is too quiet
+
+        // 2. Set strict search boundaries (50 Hz to 350 Hz)
+        const maxPeriodSamples = Math.floor(sampleRate / 50);  
+        const minPeriodSamples = Math.floor(sampleRate / 350); 
+
+        let bestOffset = -1;
+        let maxCorrelation = -Infinity;
+
+        // 3. Sliding Autocorrelation Loop
+        for (let offset = minPeriodSamples; offset <= maxPeriodSamples; offset++) {
+            let correlation = 0;
+            for (let i = 0; i < bufferSize - offset; i++) {
+                correlation += timeDomainBuffer[i] * timeDomainBuffer[i + offset];
+            }
+            if (correlation > maxCorrelation) {
+                maxCorrelation = correlation;
+                bestOffset = offset;
+            }
+        }
+
+        // 4. Convert period back to Hz
+        if (bestOffset !== -1) {
+            return sampleRate / bestOffset;
+        }
+        return -1;
+    }
+
+    // Connect to Hardware
+    startBtn.addEventListener('click', async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            
+            // 2048 is plenty large for time-domain wave capture
+            analyser.fftSize = 2048; 
+            source.connect(analyser);
+            
+            // Note: We are using a Float32Array to capture the exact wave coordinates
+            const dataArray = new Float32Array(analyser.fftSize);
+            
+            startBtn.innerText = "Tuner Processing Live";
+            startBtn.style.background = "#2e7d32";
+
+            function analyzeAudio() {
+                requestAnimationFrame(analyzeAudio);
+                
+                const now = Date.now();
+                if (now < lockUntil) return; // Keep the number on screen for 1.5s
+
+                // Get raw wave form, NOT frequency bars
+                analyser.getFloat32TimeDomainData(dataArray);
+                
+                // Run the math filter
+                const pitch = findDrumPitch(dataArray, audioContext.sampleRate);
+
+                // If pitch is valid and matches our drum profile guardrails, display it
+                if (pitch !== -1 && pitch >= minHz && pitch <= maxHz) {
+                    currentReading = pitch;
+                    hzDisplay.innerText = `${currentReading.toFixed(1)} Hz`;
+                    updateMeter(currentReading);
+                    
+                    // Freeze display so user can read it
+                    lockUntil = now + 1500; 
+                }
+            }
+            
+            analyzeAudio();
+
+        } catch (err) {
+            hzDisplay.innerText = "Error";
+            alert("Microphone connection blocked. Verify HTTPS settings.");
+            console.error(err);
+        }
+    });
+
+    function updateMeter(frequency) {
+        const delta = frequency - targetHz; 
+        let percentage = 50 + (delta / 20) * 50; 
+        
+        if (percentage < 0) percentage = 0;
+        if (percentage > 100) percentage = 100;
+        
+        needle.style.left = `${percentage}%`;
+        
+        if (Math.abs(delta) <= 1.5) {
+            needle.style.background = "var(--success-color)";
+        } else {
+            needle.style.background = "var(--accent-color)";
+        }
+    }
+
+    function saveToLug(num) {
+        if (currentReading > 0) {
+            document.getElementById(`lug${num}`).innerText = `${currentReading.toFixed(1)} Hz`;
+        } else {
+            alert("Strike your drum first to lock onto a pitch!");
+        }
+    }
+</script>
+</body>
+</html>
